@@ -884,12 +884,31 @@ async function doSignup() {
   const theme = state.theme || 'calculator';
   if(!name||!email||!pass) return showErr('su-err','Please fill in all fields');
   if(pass.length<8) return showErr('su-err','Password must be at least 8 characters');
+
   const {data,error} = await sb.auth.signUp({email,password:pass,options:{data:{display_name:name,theme}}});
   if(error) return showErr('su-err', error.message);
-  if(data.user) {
-    await sb.from('profiles').upsert({id:data.user.id,display_name:name,username:name.toLowerCase().replace(/\s+/g,'_')+Math.floor(Math.random()*999),theme,avatar_color:colorFor(name)});
-    await loadProfile(data.user);
-  } else showErr('su-err','Check your email to confirm your account');
+  if(!data.user) return showErr('su-err','Signup failed — please try again');
+
+  await new Promise(r => setTimeout(r, 800));
+
+  const {data:{session}} = await sb.auth.getSession();
+  if(!session) return showErr('su-err','Session not ready — please try logging in directly');
+
+  const username = name.toLowerCase().replace(/\s+/g,'_') + Math.floor(Math.random()*999);
+  const {error: profileErr} = await sb.from('profiles').upsert({
+    id: data.user.id,
+    display_name: name,
+    username,
+    theme,
+    avatar_color: colorFor(name)
+  });
+
+  if(profileErr) {
+    console.error('Profile error:', profileErr);
+    return showErr('su-err', 'Profile setup failed: ' + profileErr.message);
+  }
+
+  await loadProfile(data.user);
 }
 
 async function doLogout() {
@@ -901,13 +920,42 @@ async function doLogout() {
 
 async function loadProfile(user) {
   state.user = user;
-  let {data} = await sb.from('profiles').select('*').eq('id',user.id).single();
-  if(!data) {
-    const meta = user.user_metadata;
-    await sb.from('profiles').insert({id:user.id,display_name:meta.display_name||'User',username:'user_'+user.id.slice(0,6),theme:meta.theme||'calculator',avatar_color:'c-purple'});
-    const res = await sb.from('profiles').select('*').eq('id',user.id).single();
-    data = res.data;
+
+  // Retry up to 3 times — profile insert may not be immediately readable
+  let data = null;
+  for(let i = 0; i < 3; i++) {
+    const res = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    if(res.data) { data = res.data; break; }
+    await new Promise(r => setTimeout(r, 600));
   }
+
+  // Still no profile — create a fallback one
+  if(!data) {
+    const meta = user.user_metadata || {};
+    const fallbackUsername = 'user_' + user.id.slice(0,6) + Math.floor(Math.random()*99);
+    const {error: insErr} = await sb.from('profiles').upsert({
+      id: user.id,
+      display_name: meta.display_name || 'User',
+      username: fallbackUsername,
+      theme: meta.theme || state.theme || 'calculator',
+      avatar_color: 'c-purple'
+    });
+    if(insErr) console.error('Fallback profile error:', insErr);
+    const res2 = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    data = res2.data;
+  }
+
+  if(!data) {
+    // Last resort — use in-memory profile so app still loads
+    data = {
+      id: user.id,
+      display_name: user.user_metadata?.display_name || 'User',
+      username: 'user_' + user.id.slice(0,6),
+      theme: state.theme || 'calculator',
+      avatar_color: 'c-purple'
+    };
+  }
+
   state.profile = data;
   state.theme = data.theme || 'calculator';
   launchDisguise();
