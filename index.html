@@ -1242,12 +1242,22 @@ function renderUserList(users, containerId, onClick) {
   const el = document.getElementById(containerId);
   if(!users.length) { el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">No users found</div>'; return; }
   el.innerHTML = users.map(u=>`
-    <div class="user-list-item" onclick="handleUserClick_${containerId}('${u.id}','${u.display_name}','${u.avatar_color||'c-purple'}','${u.username}')">
+    <div class="user-list-item" data-uid="${u.id}" data-uname="${(u.display_name||'').replace(/"/g,'&quot;')}" data-ucol="${u.avatar_color||'c-purple'}" data-uhandle="${(u.username||'').replace(/"/g,'&quot;')}">
       <div class="avatar ${u.avatar_color||'c-purple'}" style="color:#fff;width:42px;height:42px;font-size:16px">${initials(u.display_name)}</div>
       <div><div style="font-size:15px;font-weight:600">${u.display_name}</div><div style="font-size:13px;color:var(--text2)">@${u.username}</div></div>
     </div>`).join('');
-  window[`handleUserClick_${containerId}`] = (id,name,col,uname) => onClick({id,display_name:name,avatar_color:col,username:uname});
+  el.querySelectorAll('.user-list-item').forEach(item => {
+    item.addEventListener('click', () => {
+      onClick({
+        id: item.dataset.uid,
+        display_name: item.dataset.uname,
+        avatar_color: item.dataset.ucol,
+        username: item.dataset.uhandle,
+      });
+    });
+  });
 }
+
 
 async function startDM(user) {
   const meId = state.user.id; const them = user.id;
@@ -1313,23 +1323,31 @@ document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', 
 
 // ── PRESENCE ──
 async function setupPresence() {
-  state.presenceChannel = sb.channel('presence-room', { config:{presence:{key:state.user.id}} })
-    .on('presence',{event:'sync'},()=>{
-      const ps = state.presenceChannel.presenceState();
-      state.onlineUsers = new Set(Object.keys(ps));
-      renderConversations();
-    }).subscribe(async (s) => {
-      if(s==='SUBSCRIBED') await state.presenceChannel.track({user_id:state.user.id,online:true});
-    });
+  if(state.presenceChannel) { try { await sb.removeChannel(state.presenceChannel); } catch(e){} state.presenceChannel = null; }
+  const ch = sb.channel('presence-room', { config:{presence:{key:state.user.id}} });
+  ch.on('presence',{event:'sync'},()=>{
+    const ps = ch.presenceState();
+    state.onlineUsers = new Set(Object.keys(ps));
+    renderConversations();
+  });
+  ch.subscribe(async (s) => {
+    if(s==='SUBSCRIBED') await ch.track({user_id:state.user.id,online:true});
+  });
+  state.presenceChannel = ch;
 }
 
 function subscribeToMessages() {
-  sb.channel('all-msgs').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},(payload)=>{
+  if(state.msgChannel) { try { sb.removeChannel(state.msgChannel); } catch(e){} state.msgChannel = null; }
+  const ch = sb.channel('all-msgs');
+  ch.on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},(payload)=>{
     const m = payload.new;
     if(m.sender_id!==state.user.id) { showBadge(); }
     setTimeout(()=>{ loadConversations(); loadGroups(); },500);
-  }).subscribe();
+  });
+  ch.subscribe();
+  state.msgChannel = ch;
 }
+
 
 function showBadge() {
   const b = document.getElementById('badge-chats');
