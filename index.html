@@ -837,6 +837,20 @@ function initials(name) {
   return name ? name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) : '?';
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[ch]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
 const COLORS = ['c-purple','c-pink','c-teal','c-amber','c-green','c-blue','c-coral','c-red'];
 function colorFor(str) { let h=0; for(let c of str) h=(h*31+c.charCodeAt(0))&0xfffff; return COLORS[h%COLORS.length]; }
 
@@ -1056,8 +1070,63 @@ function switchTab(name, btn) {
 
 // ── CONVERSATIONS ──
 async function loadConversations() {
-  const {data} = await sb.from('conversations').select(`*,conversation_members!inner(user_id),profiles(display_name,username,avatar_color)`).eq('conversation_members.user_id', state.user.id).eq('is_group',false).order('last_message_at',{ascending:false});
-  state.conversations = data||[];
+  const {data, error} = await sb.from('conversations')
+    .select(`*,conversation_members!inner(user_id)`)
+    .eq('conversation_members.user_id', state.user.id)
+    .eq('is_group', false)
+    .order('last_message_at', {ascending:false});
+
+  if(error) {
+    console.error('Load conversations error:', error);
+    showToast('Could not load conversations');
+    state.conversations = [];
+    renderConversations();
+    return;
+  }
+
+  const conversations = data || [];
+  const convoIds = conversations.map(c => c.id).filter(Boolean);
+  let membersByConvo = {};
+
+  if(convoIds.length) {
+    const {data:members, error:membersError} = await sb.from('conversation_members')
+      .select('conversation_id,user_id')
+      .in('conversation_id', convoIds);
+
+    if(membersError) {
+      console.error('Load conversation members error:', membersError);
+    } else {
+      (members || []).forEach(m => {
+        if(!membersByConvo[m.conversation_id]) membersByConvo[m.conversation_id] = [];
+        membersByConvo[m.conversation_id].push(m.user_id);
+      });
+    }
+  }
+
+  const otherIds = [...new Set(conversations.map(c => {
+    const allMembers = membersByConvo[c.id] || [];
+    return c.other_user_id || allMembers.find(id => id !== state.user.id);
+  }).filter(Boolean))];
+
+  let profilesById = {};
+  if(otherIds.length) {
+    const {data:profiles, error:profilesError} = await sb.from('profiles')
+      .select('id,display_name,username,avatar_color')
+      .in('id', otherIds);
+
+    if(profilesError) {
+      console.error('Load conversation profiles error:', profilesError);
+    } else {
+      profilesById = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+    }
+  }
+
+  state.conversations = conversations.map(c => {
+    const allMembers = membersByConvo[c.id] || [];
+    const otherId = c.other_user_id || allMembers.find(id => id !== state.user.id) || '';
+    return {...c, other_user_id: otherId, other_profile: profilesById[otherId] || null};
+  });
+
   renderConversations();
   subscribeToMessages();
 }
@@ -1076,15 +1145,21 @@ function renderConversations() {
   el.innerHTML = state.conversations.map(c => {
     const otherMember = c.other_profile || {};
     const name = otherMember.display_name || c.name || 'Unknown';
-    const col = otherMember.avatar_color || 'c-purple';
+    const col = COLORS.includes(otherMember.avatar_color) ? otherMember.avatar_color : 'c-purple';
     const preview = c.last_message ? (state.encodeEnabled ? caesarEncode(c.last_message,13).slice(0,30)+'…' : c.last_message.slice(0,30)) : 'No messages';
     const online = state.onlineUsers.has(c.other_user_id);
-    return `<div class="contact-item" onclick="openConvo('${c.id}','${name}','${col}',false,'${c.other_user_id||''}')">
-      <div class="avatar ${col}" style="color:#fff">${initials(name)}<div class="presence-dot" style="${online?'':'display:none'}"></div></div>
-      <div class="contact-info"><div class="contact-name">${name}</div><div class="contact-preview">${preview}</div></div>
-      <div class="contact-meta"><span class="contact-time">${c.last_message_at?fmtTime(c.last_message_at):''}</span></div>
+    return `<div class="contact-item" data-cid="${escapeAttr(c.id)}" data-cname="${escapeAttr(name)}" data-ccolor="${escapeAttr(col)}" data-peer="${escapeAttr(c.other_user_id || '')}">
+      <div class="avatar ${escapeAttr(col)}" style="color:#fff">${escapeHtml(initials(name))}<div class="presence-dot" style="${online?'':'display:none'}"></div></div>
+      <div class="contact-info"><div class="contact-name">${escapeHtml(name)}</div><div class="contact-preview">${escapeHtml(preview)}</div></div>
+      <div class="contact-meta"><span class="contact-time">${c.last_message_at?escapeHtml(fmtTime(c.last_message_at)):''}</span></div>
     </div>`;
   }).join('');
+
+  el.querySelectorAll('.contact-item').forEach(item => {
+    item.addEventListener('click', () => {
+      openConvo(item.dataset.cid, item.dataset.cname, item.dataset.ccolor, false, item.dataset.peer || '');
+    });
+  });
 }
 
 function renderGroups() {
@@ -1241,11 +1316,14 @@ async function doSearch(q) {
 function renderUserList(users, containerId, onClick) {
   const el = document.getElementById(containerId);
   if(!users.length) { el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">No users found</div>'; return; }
-  el.innerHTML = users.map(u=>`
-    <div class="user-list-item" data-uid="${u.id}" data-uname="${(u.display_name||'').replace(/"/g,'&quot;')}" data-ucol="${u.avatar_color||'c-purple'}" data-uhandle="${(u.username||'').replace(/"/g,'&quot;')}">
-      <div class="avatar ${u.avatar_color||'c-purple'}" style="color:#fff;width:42px;height:42px;font-size:16px">${initials(u.display_name)}</div>
-      <div><div style="font-size:15px;font-weight:600">${u.display_name}</div><div style="font-size:13px;color:var(--text2)">@${u.username}</div></div>
-    </div>`).join('');
+  el.innerHTML = users.map(u=>{
+    const col = COLORS.includes(u.avatar_color) ? u.avatar_color : 'c-purple';
+    return `
+    <div class="user-list-item" data-uid="${escapeAttr(u.id)}" data-uname="${escapeAttr(u.display_name || '')}" data-ucol="${escapeAttr(col)}" data-uhandle="${escapeAttr(u.username || '')}">
+      <div class="avatar ${escapeAttr(col)}" style="color:#fff;width:42px;height:42px;font-size:16px">${escapeHtml(initials(u.display_name))}</div>
+      <div><div style="font-size:15px;font-weight:600">${escapeHtml(u.display_name || 'User')}</div><div style="font-size:13px;color:var(--text2)">@${escapeHtml(u.username || '')}</div></div>
+    </div>`;
+  }).join('');
   el.querySelectorAll('.user-list-item').forEach(item => {
     item.addEventListener('click', () => {
       onClick({
@@ -1260,22 +1338,61 @@ function renderUserList(users, containerId, onClick) {
 
 
 async function startDM(user) {
-  const meId = state.user.id; const them = user.id;
-  let {data:existing} = await sb.from('conversations').select('id,conversation_members!inner(user_id)').eq('is_group',false).eq('conversation_members.user_id',meId);
+  if(!state.user?.id || !user?.id) return;
+  const meId = state.user.id;
+  const them = user.id;
+
   let convId = null;
+  const {data:existing, error:existingError} = await sb.from('conversations')
+    .select('id,conversation_members!inner(user_id)')
+    .eq('is_group', false)
+    .eq('conversation_members.user_id', meId);
+
+  if(existingError) {
+    console.error('Find existing conversation error:', existingError);
+  }
+
   if(existing) {
     for(const c of existing) {
-      const {data:members} = await sb.from('conversation_members').select('user_id').eq('conversation_id',c.id);
-      if(members?.length===2 && members.some(m=>m.user_id===them)) { convId=c.id; break; }
+      const {data:members, error:membersError} = await sb.from('conversation_members')
+        .select('user_id')
+        .eq('conversation_id', c.id);
+      if(membersError) {
+        console.error('Find existing members error:', membersError);
+        continue;
+      }
+      if(members?.length === 2 && members.some(m => m.user_id === them)) {
+        convId = c.id;
+        break;
+      }
     }
   }
+
   if(!convId) {
-    const {data:conv} = await sb.from('conversations').insert({is_group:false,other_user_id:them,created_by:meId}).select().single();
+    const {data:conv, error:convError} = await sb.from('conversations')
+      .insert({is_group:false, other_user_id:them, created_by:meId})
+      .select('id')
+      .single();
+
+    if(convError || !conv?.id) {
+      console.error('Create conversation error:', convError);
+      showToast('Could not start conversation');
+      return;
+    }
+
     convId = conv.id;
-    await sb.from('conversation_members').insert([{conversation_id:convId,user_id:meId},{conversation_id:convId,user_id:them}]);
+    const {error:memberError} = await sb.from('conversation_members')
+      .insert([{conversation_id:convId,user_id:meId},{conversation_id:convId,user_id:them}]);
+
+    if(memberError) {
+      console.error('Add conversation members error:', memberError);
+      showToast('Could not add this user');
+      return;
+    }
   }
+
   closeModals();
-  openConvo(convId, user.display_name, user.avatar_color||'c-purple', false, them);
+  openConvo(convId, user.display_name || 'User', user.avatar_color || 'c-purple', false, them);
 }
 
 // ── NEW CHAT MODAL ──
