@@ -100,9 +100,9 @@
   .calc-display { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 20px 24px 16px; background: #111; }
   .calc-expr { font-size: 22px; color: #888; text-align: right; min-height: 28px; word-break: break-all; }
   .calc-result { font-size: 52px; font-weight: 300; text-align: right; color: #fff; letter-spacing: -1px; word-break: break-all; }
-  .calc-unlock-hint { font-size: 11px; color: #333; text-align: right; margin-top: 4px; }
+  .calc-unlock-hint { font-size: 11px; color: #444; text-align: right; margin-top: 4px; letter-spacing: 0.5px; }
   .calc-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #000; }
-  .calc-btn { background: #2a2a2a; border: none; padding: 0; aspect-ratio: 1.1; font-size: 22px; color: #fff; cursor: pointer; font-family: var(--font); font-weight: 400; transition: background 0.1s; display: flex; align-items: center; justify-content: center; }
+  .calc-btn { background: #2a2a2a; border: none; padding: 0; height: 80px; max-height: 22vw; font-size: 22px; color: #fff; cursor: pointer; font-family: var(--font); font-weight: 400; transition: background 0.1s; display: flex; align-items: center; justify-content: center; }
   .calc-btn:active { background: #444; }
   .calc-btn.fn { background: #3a3a3a; color: #fff; }
   .calc-btn.op { background: #f0a500; color: #fff; font-size: 26px; }
@@ -1042,7 +1042,19 @@ function launchChat() {
 
 // ── CALCULATOR DISGUISE ──
 let calcVal = '', calcPrev = '', calcOp = '', calcFresh = false;
+// Show subtle unlock hint after idle
+let calcHintTimer = null;
+function resetCalcHint() {
+  clearTimeout(calcHintTimer);
+  document.getElementById('calc-hint').textContent = '';
+  calcHintTimer = setTimeout(()=>{
+    const hint = document.getElementById('calc-hint');
+    if(hint) hint.textContent = 'enter code + =';
+  }, 4000);
+}
+
 function calcInput(k) {
+  resetCalcHint();
   const res = document.getElementById('calc-result');
   const expr = document.getElementById('calc-expr');
   if(k==='AC') { calcVal=''; calcPrev=''; calcOp=''; calcFresh=false; res.textContent='0'; expr.textContent=''; state.calcSeq=''; return; }
@@ -1232,8 +1244,12 @@ async function openConvo(id, name, color, isGroup, peerId) {
   document.getElementById('messages-wrap').innerHTML = '<div class="msg-system">Messages are private end-to-end</div>';
   await loadMessages(id);
   if(state.msgChannel) sb.removeChannel(state.msgChannel);
-  state.msgChannel = sb.channel('msgs-'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`conversation_id=eq.${id}`},(payload)=>{
-    appendMessage(payload.new); scrollBottom();
+  state.msgChannel = sb.channel('msgs-'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`conversation_id=eq.${id}`},async (payload)=>{
+    const m = payload.new;
+    if(_sentIds.has(m.id)) { _sentIds.delete(m.id); return; } // already shown
+    // fetch with profile info for display
+    const {data} = await sb.from('messages').select('*,profiles(display_name,avatar_color)').eq('id',m.id).single();
+    appendMessage(data||m); scrollBottom();
   }).subscribe();
 }
 
@@ -1319,6 +1335,7 @@ function scrollBottom() {
 }
 
 // ── SEND MESSAGE ──
+const _sentIds = new Set(); // track IDs we already appended to avoid realtime double-append
 async function sendMessage() {
   const inp = document.getElementById('msg-input');
   const text = inp.value.trim();
@@ -1326,8 +1343,12 @@ async function sendMessage() {
   inp.value=''; autoResize(inp);
   const msg = { conversation_id: state.activeConvo.id, sender_id: state.user.id, content: state.encodeEnabled ? caesarEncode(text,13) : text, type:'text' };
   const {data,error} = await sb.from('messages').insert(msg).select('*,profiles(display_name,avatar_color)').single();
-  if(!error) { appendMessage(data); scrollBottom(); }
-  await sb.from('conversations').update({last_message: msg.content.slice(0,50), last_message_at: new Date().toISOString()}).eq('id', state.activeConvo.id);
+  if(!error && data) {
+    _sentIds.add(data.id);
+    appendMessage(data);
+    scrollBottom();
+    await sb.from('conversations').update({last_message: msg.content.slice(0,50), last_message_at: new Date().toISOString()}).eq('id', state.activeConvo.id);
+  }
 }
 
 async function sendVideo() {
