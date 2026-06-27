@@ -1038,6 +1038,7 @@ function launchChat() {
   loadConversations();
   loadGroups();
   setupPresence();
+  listenForIncomingCalls(); // global listener — always on after login
 }
 
 // ── CALCULATOR DISGUISE ──
@@ -1571,68 +1572,236 @@ function toggleStatus() {
 }
 
 // ── CALLS (WebRTC) ──
-const ICE_SERVERS = [{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}];
+const ICE_SERVERS = [
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+  {urls:'stun:stun2.l.google.com:19302'}
+];
+
+// Holds pending incoming call info before user accepts
+state.incomingCall = null;
+state.callChannel = null;
+
+// ── Global incoming call listener — starts at login, always on ──
+function listenForIncomingCalls() {
+  if(state.callChannel) { try { sb.removeChannel(state.callChannel); } catch(e){} }
+  state.callChannel = sb.channel('incoming-calls-' + state.user.id)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'call_signals'}, async (p) => {
+      const sig = p.new;
+      // Ignore signals we sent ourselves
+      if(sig.sender_id === state.user.id) return;
+      // Only handle 'offer' or 'end' here — candidates/answers handled inside active call
+      if(sig.type === 'offer') {
+        // Don't show if already in a call
+        if(document.getElementById('call-overlay').classList.contains('active')) return;
+        // Look up caller profile
+        const {data: callerProfile} = await sb.from('profiles').select('display_name,avatar_color').eq('id', sig.sender_id).single();
+        const callerName = callerProfile?.display_name || 'Someone';
+        const callerColor = callerProfile?.avatar_color || 'c-purple';
+        // Parse call type from offer metadata
+        let callType = 'audio';
+        try { const parsed = JSON.parse(sig.payload); callType = parsed.callType || 'audio'; } catch(e){}
+        // Store for acceptCall()
+        state.incomingCall = {
+          convId: sig.conversation_id,
+          callerId: sig.sender_id,
+          callerName,
+          callerColor,
+          callType,
+          offer: sig.payload
+        };
+        showIncomingCall(callerName, callerColor, callType);
+      } else if(sig.type === 'end') {
+        // Caller hung up before answer
+        hideIncomingCall();
+        if(document.getElementById('call-overlay').classList.contains('active')) {
+          endCall();
+          showToast('Call ended');
+        }
+      }
+    })
+    .subscribe();
+}
+
+function showIncomingCall(name, color, type) {
+  const el = document.getElementById('incoming-call-overlay');
+  document.getElementById('incoming-avatar').textContent = initials(name);
+  document.getElementById('incoming-avatar').className = '';
+  document.getElementById('incoming-avatar').style.cssText = 'width:88px;height:88px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;color:#fff;background:var(--accent)';
+  document.getElementById('incoming-name').textContent = name;
+  document.getElementById('incoming-type').textContent = type === 'video' ? '📹 Incoming video call' : '📞 Incoming voice call';
+  el.style.display = 'flex';
+  // Vibrate if supported
+  if(navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
+}
+
+function hideIncomingCall() {
+  document.getElementById('incoming-call-overlay').style.display = 'none';
+  if(navigator.vibrate) navigator.vibrate(0);
+  state.incomingCall = null;
+}
+
+async function acceptCall() {
+  const ic = state.incomingCall;
+  if(!ic) return;
+  hideIncomingCall();
+  state.callType = ic.callType;
+  // Open the conversation if not already open
+  if(!state.activeConvo || state.activeConvo.id !== ic.convId) {
+    // Find conversation details
+    const {data: conv} = await sb.from('conversations').select('*').eq('id', ic.convId).single();
+    if(conv) {
+      state.activeConvo = {id: ic.convId, name: ic.callerName, color: ic.callerColor, isGroup: false, peerId: ic.callerId};
+    }
+  }
+  // Show call overlay
+  document.getElementById('call-overlay').classList.add('active');
+  document.getElementById('call-peer-name').textContent = ic.callerName;
+  document.getElementById('call-state').textContent = 'Connecting...';
+  try {
+    state.localStream = await navigator.mediaDevices.getUserMedia({audio:true, video: ic.callType==='video'});
+    if(ic.callType === 'video') document.getElementById('call-local-video').srcObject = state.localStream;
+    await initPeerConnection(false, ic.offer, ic.convId);
+  } catch(e) {
+    console.error('Accept call error:', e);
+    showToast('Could not access camera/mic');
+    endCall();
+  }
+}
+
+function rejectCall() {
+  const ic = state.incomingCall;
+  if(ic) {
+    sb.from('call_signals').insert({conversation_id: ic.convId, sender_id: state.user.id, type:'end', payload:'{}'});
+  }
+  hideIncomingCall();
+}
 
 async function startCall(type) {
-  if(!state.activeConvo||state.activeConvo.isGroup) return showToast('Calls available in DMs only');
+  if(!state.activeConvo || state.activeConvo.isGroup) return showToast('Calls available in DMs only');
   state.callType = type;
-  const overlay = document.getElementById('call-overlay');
-  overlay.classList.add('active');
+  document.getElementById('call-overlay').classList.add('active');
   document.getElementById('call-peer-name').textContent = state.activeConvo.name;
   document.getElementById('call-state').textContent = 'Calling...';
   try {
-    state.localStream = await navigator.mediaDevices.getUserMedia({audio:true,video:type==='video'});
-    if(type==='video') document.getElementById('call-local-video').srcObject = state.localStream;
-    await initPeerConnection(true);
-  } catch(e) { showToast('Could not access camera/mic'); endCall(); }
+    state.localStream = await navigator.mediaDevices.getUserMedia({audio:true, video: type==='video'});
+    if(type === 'video') document.getElementById('call-local-video').srcObject = state.localStream;
+    await initPeerConnection(true, null, state.activeConvo.id);
+  } catch(e) {
+    console.error('Start call error:', e);
+    showToast('Could not access camera/mic');
+    endCall();
+  }
 }
 
-async function initPeerConnection(isInitiator) {
-  state.peerConnection = new RTCPeerConnection({iceServers:ICE_SERVERS});
-  if(state.localStream) state.localStream.getTracks().forEach(t=>state.peerConnection.addTrack(t,state.localStream));
-  state.peerConnection.ontrack = (e) => { document.getElementById('call-remote-video').srcObject = e.streams[0]; document.getElementById('call-state').textContent='Connected'; };
-  state.peerConnection.onicecandidate = async (e) => {
-    if(e.candidate) await sb.from('call_signals').insert({conversation_id:state.activeConvo.id,sender_id:state.user.id,type:'candidate',payload:JSON.stringify(e.candidate)});
+async function initPeerConnection(isInitiator, incomingOfferPayload, convId) {
+  // Clean up any existing connection
+  if(state.peerConnection) { try { state.peerConnection.close(); } catch(e){} state.peerConnection = null; }
+
+  state.peerConnection = new RTCPeerConnection({iceServers: ICE_SERVERS});
+
+  // Add local tracks
+  if(state.localStream) state.localStream.getTracks().forEach(t => state.peerConnection.addTrack(t, state.localStream));
+
+  // Remote stream handler
+  state.peerConnection.ontrack = (e) => {
+    document.getElementById('call-remote-video').srcObject = e.streams[0];
+    document.getElementById('call-state').textContent = 'Connected ✓';
   };
-  if(isInitiator) {
-    const offer = await state.peerConnection.createOffer();
-    await state.peerConnection.setLocalDescription(offer);
-    await sb.from('call_signals').insert({conversation_id:state.activeConvo.id,sender_id:state.user.id,type:'offer',payload:JSON.stringify(offer)});
-  }
-  sb.channel('call-'+state.activeConvo.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'call_signals',filter:`conversation_id=eq.${state.activeConvo.id}`},async (p)=>{
-    const sig = p.new; if(sig.sender_id===state.user.id) return;
-    const payload = JSON.parse(sig.payload);
-    if(sig.type==='offer') {
-      await state.peerConnection.setRemoteDescription(payload);
-      const answer = await state.peerConnection.createAnswer();
-      await state.peerConnection.setLocalDescription(answer);
-      await sb.from('call_signals').insert({conversation_id:state.activeConvo.id,sender_id:state.user.id,type:'answer',payload:JSON.stringify(answer)});
-    } else if(sig.type==='answer') {
-      await state.peerConnection.setRemoteDescription(payload);
-    } else if(sig.type==='candidate') {
-      await state.peerConnection.addIceCandidate(payload).catch(()=>{});
+
+  // ICE candidates — send through Supabase
+  state.peerConnection.onicecandidate = async (e) => {
+    if(e.candidate) {
+      await sb.from('call_signals').insert({
+        conversation_id: convId,
+        sender_id: state.user.id,
+        type: 'candidate',
+        payload: JSON.stringify(e.candidate)
+      });
     }
-  }).subscribe();
+  };
+
+  // Connection state logging
+  state.peerConnection.onconnectionstatechange = () => {
+    const s = state.peerConnection?.connectionState;
+    if(s === 'disconnected' || s === 'failed') { showToast('Call disconnected'); endCall(); }
+  };
+
+  // Subscribe to signals for this conversation
+  const callCh = sb.channel('call-signals-' + convId + '-' + Date.now())
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'call_signals', filter:`conversation_id=eq.${convId}`}, async (p) => {
+      const sig = p.new;
+      if(sig.sender_id === state.user.id) return; // ignore own signals
+      if(!state.peerConnection) return;
+      try {
+        const payload = JSON.parse(sig.payload);
+        if(sig.type === 'answer' && isInitiator) {
+          await state.peerConnection.setRemoteDescription(new RTCSessionDescription(payload));
+          document.getElementById('call-state').textContent = 'Connected ✓';
+        } else if(sig.type === 'candidate') {
+          if(state.peerConnection.remoteDescription) {
+            await state.peerConnection.addIceCandidate(new RTCIceCandidate(payload));
+          }
+        } else if(sig.type === 'end') {
+          showToast('Call ended');
+          endCall();
+        }
+      } catch(e) { console.error('Signal error:', e); }
+    })
+    .subscribe();
+
+  // Store channel reference for cleanup
+  state.activeCallChannel = callCh;
+
+  if(isInitiator) {
+    // Create and send offer — embed callType in offer payload for recipient
+    const offer = await state.peerConnection.createOffer({offerToReceiveAudio:true, offerToReceiveVideo: state.callType==='video'});
+    await state.peerConnection.setLocalDescription(offer);
+    const offerPayload = {...offer, callType: state.callType};
+    await sb.from('call_signals').insert({
+      conversation_id: convId,
+      sender_id: state.user.id,
+      type: 'offer',
+      payload: JSON.stringify(offerPayload)
+    });
+  } else {
+    // Recipient: set remote description from the incoming offer and answer
+    const offerData = JSON.parse(incomingOfferPayload);
+    await state.peerConnection.setRemoteDescription(new RTCSessionDescription({type: offerData.type, sdp: offerData.sdp}));
+    const answer = await state.peerConnection.createAnswer();
+    await state.peerConnection.setLocalDescription(answer);
+    await sb.from('call_signals').insert({
+      conversation_id: convId,
+      sender_id: state.user.id,
+      type: 'answer',
+      payload: JSON.stringify(answer)
+    });
+  }
 }
 
 function endCall() {
-  if(state.peerConnection) { state.peerConnection.close(); state.peerConnection=null; }
-  if(state.localStream) { state.localStream.getTracks().forEach(t=>t.stop()); state.localStream=null; }
+  // Send end signal to other party
+  if(state.activeConvo && state.peerConnection) {
+    sb.from('call_signals').insert({conversation_id: state.activeConvo.id, sender_id: state.user.id, type:'end', payload:'{}'}).catch(()=>{});
+  }
+  if(state.peerConnection) { try { state.peerConnection.close(); } catch(e){} state.peerConnection = null; }
+  if(state.localStream) { state.localStream.getTracks().forEach(t=>t.stop()); state.localStream = null; }
+  if(state.activeCallChannel) { try { sb.removeChannel(state.activeCallChannel); } catch(e){} state.activeCallChannel = null; }
   document.getElementById('call-overlay').classList.remove('active');
-  document.getElementById('call-remote-video').srcObject=null;
-  document.getElementById('call-local-video').srcObject=null;
-  state.callType=null; state.muted=false; state.vidOff=false;
+  document.getElementById('call-remote-video').srcObject = null;
+  document.getElementById('call-local-video').srcObject = null;
+  state.callType = null; state.muted = false; state.vidOff = false;
 }
 
 function toggleMute() {
-  state.muted=!state.muted;
-  if(state.localStream) state.localStream.getAudioTracks().forEach(t=>t.enabled=!state.muted);
-  document.getElementById('mute-btn').style.background = state.muted?'var(--red)':'rgba(255,255,255,0.2)';
+  state.muted = !state.muted;
+  if(state.localStream) state.localStream.getAudioTracks().forEach(t => t.enabled = !state.muted);
+  document.getElementById('mute-btn').style.background = state.muted ? 'var(--red)' : 'rgba(255,255,255,0.2)';
 }
 function toggleVideo() {
-  state.vidOff=!state.vidOff;
-  if(state.localStream) state.localStream.getVideoTracks().forEach(t=>t.enabled=!state.vidOff);
-  document.getElementById('vid-btn').style.background = state.vidOff?'var(--red)':'rgba(255,255,255,0.2)';
+  state.vidOff = !state.vidOff;
+  if(state.localStream) state.localStream.getVideoTracks().forEach(t => t.enabled = !state.vidOff);
+  document.getElementById('vid-btn').style.background = state.vidOff ? 'var(--red)' : 'rgba(255,255,255,0.2)';
 }
 
 
@@ -1683,5 +1852,41 @@ async function sendImage(input) {
   });
 })();
 </script>
+
+<!-- ── INCOMING CALL OVERLAY ── -->
+<div id="incoming-call-overlay" style="display:none;position:fixed;inset:0;z-index:150;background:rgba(0,0,0,0.92);flex-direction:column;align-items:center;justify-content:center;gap:28px;">
+  <div style="text-align:center">
+    <div id="incoming-avatar" style="width:88px;height:88px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;color:#fff;background:var(--accent)"></div>
+    <div id="incoming-name" style="font-size:24px;font-weight:700;color:#fff"></div>
+    <div id="incoming-type" style="font-size:15px;color:rgba(255,255,255,0.5);margin-top:6px"></div>
+  </div>
+  <!-- Pulsing ring animation -->
+  <div style="position:relative;width:80px;height:80px">
+    <div style="position:absolute;inset:0;border-radius:50%;background:rgba(34,197,94,0.15);animation:ring-pulse 1.5s ease-out infinite"></div>
+    <div style="position:absolute;inset:8px;border-radius:50%;background:rgba(34,197,94,0.2);animation:ring-pulse 1.5s ease-out 0.3s infinite"></div>
+    <div style="position:absolute;inset:16px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:22px">📞</div>
+  </div>
+  <div style="display:flex;gap:40px;margin-top:8px">
+    <div style="text-align:center">
+      <button onclick="rejectCall()" style="width:64px;height:64px;border-radius:50%;background:var(--red);border:none;font-size:26px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin:0 auto">
+        <svg viewBox="0 0 24 24" style="width:26px;height:26px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67m-2.67-3.34a19.79 19.79 0 01-3.07-8.63A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91M23 1L1 23"/></svg>
+      </button>
+      <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:8px">Decline</div>
+    </div>
+    <div style="text-align:center">
+      <button onclick="acceptCall()" style="width:64px;height:64px;border-radius:50%;background:var(--green);border:none;font-size:26px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin:0 auto">
+        <svg viewBox="0 0 24 24" style="width:26px;height:26px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.8 10.7 19.79 19.79 0 01.75 2.1 2 2 0 012.75 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.62a16 16 0 006.29 6.29l1.68-1.68a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      </button>
+      <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:8px">Accept</div>
+    </div>
+  </div>
+</div>
+<style>
+@keyframes ring-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+</style>
+
 </body>
 </html>
