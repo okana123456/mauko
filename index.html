@@ -249,10 +249,8 @@
   .msg-bubble { max-width: 72%; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.45; word-break: break-word; cursor: pointer; user-select: none; position: relative; }
   .msg-bubble.theirs { background: var(--surface); border-bottom-left-radius: 4px; color: var(--text); }
   .msg-bubble.mine { background: var(--accent); border-bottom-right-radius: 4px; color: #fff; }
-  .msg-bubble.msg-locked { display:flex; align-items:center; gap:8px; cursor:pointer; opacity:0.75; user-select:none; }
-  .msg-bubble.msg-locked .lock-icon { font-size:16px; }
-  .msg-bubble.msg-locked .lock-hint { font-size:13px; font-style:italic; }
-  .msg-bubble.msg-revealed { cursor:pointer; }
+  .msg-bubble.msg-encoded { cursor:pointer; user-select:none; letter-spacing:0.5px; filter:blur(3px); transition: filter 0.15s; }
+  .msg-bubble.msg-encoded.msg-revealing { filter:none; }
   .msg-meta { font-size: 10px; margin-top: 3px; padding: 0 4px; }
   .msg-row.mine .msg-meta { text-align: right; color: rgba(255,255,255,0.5); }
   .msg-row.theirs .msg-meta { color: var(--text3); }
@@ -713,7 +711,7 @@
   <div class="msg-input-wrap">
     <div class="encode-bar" onclick="toggleEncode()">
       <div class="encode-toggle on" id="encode-toggle"></div>
-      <span class="encode-label" id="encode-label">Messages locked — tap to read</span>
+      <span class="encode-label" id="encode-label">Messages encoded — hold to read</span>
     </div>
     <div class="emoji-strip">
       <button class="emoji-btn" onclick="addEmoji('😂')">😂</button>
@@ -1298,51 +1296,59 @@ async function loadMessages(convId) {
 function appendMessage(m) {
   const wrap = document.getElementById('messages-wrap');
   const mine = m.sender_id === state.user.id;
-  const text = m.content;
+  const rawText = m.content;
   const col = m.profiles?.avatar_color || 'c-purple';
   const name = m.profiles?.display_name || '?';
-  const msgId = m.id || ('msg_' + Date.now() + Math.random());
+  const msgId = m.id || ('msg_' + Date.now() + '_' + Math.floor(Math.random()*99999));
 
   let inner = '';
   if(m.type==='video') {
-    inner = renderVideoCard(text);
+    inner = renderVideoCard(rawText);
   } else if(m.type==='image') {
-    inner = `<img class="msg-img" src="${escapeAttr(text)}" alt="image" onclick="window.open('${escapeAttr(text)}','_blank')">`;
+    inner = `<img class="msg-img" src="${escapeAttr(rawText)}" alt="image" onclick="window.open('${escapeAttr(rawText)}','_blank')">`;
   } else {
-    // Encode logic: if encode on and NOT mine, show locked view with tap to reveal
-    if(state.encodeEnabled && !mine) {
-      const safeText = encodeURIComponent(text);
-      inner = `<div class="msg-bubble theirs msg-locked" id="ml_${escapeAttr(msgId)}" data-text="${safeText}" onclick="toggleMsgReveal(this)">
-        <span class="lock-icon">🔒</span>
-        <span class="lock-hint">Tap to read</span>
-      </div>`;
+    if(state.encodeEnabled) {
+      // Show cipher text for both sent and received — long press to peek real text
+      const cipherText = caesarEncode(rawText, 13);
+      const safeRaw = encodeURIComponent(rawText);
+      inner = `<div class="msg-bubble ${mine?'mine':'theirs'} msg-encoded"
+        data-raw="${safeRaw}"
+        data-cipher="${encodeURIComponent(cipherText)}"
+        onpointerdown="holdRevealStart(this)"
+        onpointerup="holdRevealEnd(this)"
+        onpointerleave="holdRevealEnd(this)"
+        ontouchend="holdRevealEnd(this)">${escapeHtml(cipherText)}</div>`;
     } else {
-      inner = `<div class="msg-bubble ${mine?'mine':'theirs'}">${escapeHtml(text)}</div>`;
+      inner = `<div class="msg-bubble ${mine?'mine':'theirs'}">${escapeHtml(rawText)}</div>`;
     }
   }
 
   const row = document.createElement('div');
-  row.className = 'msg-row '+(mine?'mine':'');
-  row.innerHTML = `${!mine?`<div class="msg-avatar ${col}" style="color:#fff">${escapeHtml(initials(name))}</div>`:''}
+  row.className = 'msg-row ' + (mine ? 'mine' : '');
+  row.innerHTML = `${!mine ? `<div class="msg-avatar ${col}" style="color:#fff">${escapeHtml(initials(name))}</div>` : ''}
     <div>
-      ${!mine&&state.activeConvo?.isGroup?`<div style="font-size:11px;color:var(--text3);margin-bottom:2px;padding-left:4px">${escapeHtml(name)}</div>`:''}
+      ${!mine && state.activeConvo?.isGroup ? `<div style="font-size:11px;color:var(--text3);margin-bottom:2px;padding-left:4px">${escapeHtml(name)}</div>` : ''}
       ${inner}
       <div class="msg-meta">${fmtTime(m.created_at)}</div>
     </div>`;
   wrap.appendChild(row);
 }
 
-function toggleMsgReveal(el) {
-  const isRevealed = el.classList.contains('msg-revealed');
-  if(isRevealed) {
-    // Re-lock
-    el.classList.remove('msg-revealed');
-    el.innerHTML = '<span class="lock-icon">🔒</span><span class="lock-hint">Tap to read</span>';
-  } else {
-    // Reveal
-    const text = decodeURIComponent(el.dataset.text);
-    el.classList.add('msg-revealed');
-    el.innerHTML = escapeHtml(text) + '<span class="lock-re" onclick="event.stopPropagation();toggleMsgReveal(this.parentElement)" style="margin-left:8px;font-size:11px;opacity:0.5;cursor:pointer">🔒</span>';
+// Long press to reveal, release to re-hide
+let _revealTimer = null;
+function holdRevealStart(el) {
+  _revealTimer = setTimeout(() => {
+    const raw = decodeURIComponent(el.dataset.raw);
+    el.textContent = raw;
+    el.classList.add('msg-revealing');
+  }, 500);
+}
+function holdRevealEnd(el) {
+  clearTimeout(_revealTimer);
+  if(el.classList.contains('msg-revealing')) {
+    el.classList.remove('msg-revealing');
+    const cipher = decodeURIComponent(el.dataset.cipher);
+    el.textContent = cipher;
   }
 }
 
@@ -1410,7 +1416,7 @@ function toggleEncode() {
   const t = document.getElementById('encode-toggle');
   const l = document.getElementById('encode-label');
   t.classList.toggle('on', state.encodeEnabled);
-  l.textContent = state.encodeEnabled ? 'Messages locked — tap to read' : 'Messages shown as sent';
+  l.textContent = state.encodeEnabled ? 'Messages encoded — hold to read' : 'Messages shown as sent';
   if(state.activeConvo) loadMessages(state.activeConvo.id);
 }
 
@@ -1569,15 +1575,23 @@ async function setupPresence() {
 }
 
 function subscribeToMessages() {
-  if(state.msgChannel) { try { sb.removeChannel(state.msgChannel); } catch(e){} state.msgChannel = null; }
-  const ch = sb.channel('all-msgs');
-  ch.on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},(payload)=>{
-    const m = payload.new;
-    if(m.sender_id!==state.user.id) { showBadge(); }
-    setTimeout(()=>{ loadConversations(); loadGroups(); },500);
-  });
-  ch.subscribe();
-  state.msgChannel = ch;
+  // Subscribe only to conversations this user is a member of — no leaks
+  if(state._globalMsgChannel) { try { sb.removeChannel(state._globalMsgChannel); } catch(e){} state._globalMsgChannel = null; }
+  if(!state.conversations.length) return;
+
+  const myConvoIds = state.conversations.map(c => c.id);
+  // Supabase filter supports one value at a time, so we listen broadly but filter in JS
+  const ch = sb.channel('global-msgs-' + state.user.id)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, (payload) => {
+      const m = payload.new;
+      // Strict check — only process if this message belongs to one of MY conversations
+      if(!myConvoIds.includes(m.conversation_id)) return;
+      if(m.sender_id !== state.user.id) showBadge();
+      // Refresh conversation list preview
+      setTimeout(() => { loadConversations(); }, 600);
+    })
+    .subscribe();
+  state._globalMsgChannel = ch;
 }
 
 
