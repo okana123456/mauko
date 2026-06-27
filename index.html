@@ -31,7 +31,30 @@
     --radius-xs: 6px;
     --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   }
-  html, body { height: 100%; overflow: hidden; background: var(--bg); font-family: var(--font); color: var(--text); }
+  /* ── LIGHT MODE (Warm Paper) ── */
+  body[data-mode="light"] {
+    --bg: #faf7f2;
+    --bg2: #f3ede1;
+    --bg3: #efe9dd;
+    --surface: #ffffff;
+    --surface2: #f7f1e6;
+    --border: rgba(60,40,20,0.10);
+    --border2: rgba(60,40,20,0.20);
+    --text: #2b2b2b;
+    --text2: #6b5e4e;
+    --text3: #9a8e7d;
+    --accent: #c47a3d;
+    --accent2: #d89460;
+    --accent3: #a8632c;
+  }
+  body[data-mode="light"] .msg-bubble.theirs { color: var(--text); }
+  body[data-mode="light"] .msg-row.mine .msg-meta { color: rgba(255,255,255,0.85); }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); font-family: var(--font); color: var(--text); transition: background 0.2s, color 0.2s; }
+  .msg-img { max-width: 220px; max-height: 280px; border-radius: 14px; display: block; cursor: pointer; }
+  .attach-opt { display:flex; align-items:center; gap:12px; padding:14px 4px; cursor:pointer; border-bottom:1px solid var(--border); }
+  .attach-opt:last-child { border-bottom:none; }
+  .attach-opt .ico { width:38px; height:38px; border-radius:10px; background:var(--bg3); display:flex; align-items:center; justify-content:center; font-size:20px; }
+  .attach-opt .lbl { font-size:15px; font-weight:600; }
 
   /* ── SCREENS ── */
   .screen { position: fixed; inset: 0; display: flex; flex-direction: column; transition: opacity 0.3s, transform 0.3s; }
@@ -608,6 +631,10 @@
           <span class="profile-row-label">Disguise theme</span>
           <span class="profile-row-val" id="profile-theme-label">—</span>
         </div>
+        <div class="profile-row">
+          <span class="profile-row-label">Light mode</span>
+          <div class="toggle" id="lightmode-toggle" onclick="toggleLightMode()"></div>
+        </div>
         <div class="section-header">Privacy</div>
         <div class="profile-row">
           <span class="profile-row-label">Encode messages</span>
@@ -762,14 +789,25 @@
   </div>
 </div>
 
-<!-- Attach modal (video link) -->
+<!-- Attach modal (image or video link) -->
 <div class="modal-bg" id="modal-attach">
   <div class="modal-sheet">
     <div class="modal-handle"></div>
-    <div class="modal-title">Share a video</div>
-    <input class="modal-input" id="video-url" placeholder="Paste TikTok or Instagram link...">
-    <button class="btn-primary" onclick="sendVideo()">Share Video</button>
-    <button class="btn-text" onclick="closeModals()" style="display:block;width:100%;margin-top:6px">Cancel</button>
+    <div class="modal-title">Share</div>
+    <div class="attach-opt" onclick="document.getElementById('image-file').click()">
+      <div class="ico">🖼️</div>
+      <div class="lbl">Send a photo</div>
+    </div>
+    <div class="attach-opt" onclick="showVideoInput()">
+      <div class="ico">🎬</div>
+      <div class="lbl">Share a video link</div>
+    </div>
+    <div id="video-input-wrap" style="display:none;margin-top:12px">
+      <input class="modal-input" id="video-url" placeholder="Paste TikTok / Instagram / YouTube link...">
+      <button class="btn-primary" onclick="sendVideo()">Share Video</button>
+    </div>
+    <input type="file" id="image-file" accept="image/*" style="display:none" onchange="sendImage(this)">
+    <button class="btn-text" onclick="closeModals()" style="display:block;width:100%;margin-top:10px">Cancel</button>
   </div>
 </div>
 
@@ -1219,6 +1257,8 @@ function appendMessage(m) {
   let inner = '';
   if(m.type==='video') {
     inner = renderVideoCard(text);
+  } else if(m.type==='image') {
+    inner = `<img class="msg-img" src="${escapeAttr(text)}" alt="image" onclick="window.open('${escapeAttr(text)}','_blank')">`;
   } else {
     inner = `<div class="msg-bubble ${mine?'mine':'theirs'} ${state.encodeEnabled&&!mine?'encoded':''}" ontouchstart="touchHoldStart(this,'${encodeURIComponent(text)}')" ontouchend="touchHoldEnd()" onmousedown="touchHoldStart(this,'${encodeURIComponent(text)}')" onmouseup="touchHoldEnd()">${displayText}</div>`;
   }
@@ -1560,8 +1600,46 @@ function toggleVideo() {
   document.getElementById('vid-btn').style.background = state.vidOff?'var(--red)':'rgba(255,255,255,0.2)';
 }
 
+
+// ── LIGHT / DARK MODE ──
+function applyMode(mode) {
+  document.body.setAttribute('data-mode', mode);
+  const t = document.getElementById('lightmode-toggle');
+  if(t) t.classList.toggle('on', mode === 'light');
+  try { localStorage.setItem('mauko_mode', mode); } catch(e) {}
+}
+function toggleLightMode() {
+  const cur = document.body.getAttribute('data-mode') === 'light' ? 'dark' : 'light';
+  applyMode(cur);
+}
+
+// ── IMAGE UPLOAD ──
+function showVideoInput() {
+  document.getElementById('video-input-wrap').style.display = 'block';
+}
+async function sendImage(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if(!file || !state.activeConvo || !state.user) return;
+  if(file.size > 8 * 1024 * 1024) return showToast('Image too large (max 8MB)');
+  closeModals();
+  showToast('Uploading...');
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = `${state.user.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const { error: upErr } = await sb.storage.from('chat-images').upload(path, file, { contentType: file.type, upsert: false });
+  if(upErr) { console.error('Upload error:', upErr); return showToast('Upload failed — check bucket setup'); }
+  const { data: pub } = sb.storage.from('chat-images').getPublicUrl(path);
+  const url = pub.publicUrl;
+  const msg = { conversation_id: state.activeConvo.id, sender_id: state.user.id, content: url, type: 'image' };
+  const { data, error } = await sb.from('messages').insert(msg).select('*,profiles(display_name,avatar_color)').single();
+  if(error) { console.error('Image msg insert error:', error); return showToast('Send failed'); }
+  appendMessage(data); scrollBottom();
+  await sb.from('conversations').update({ last_message: '📷 Photo', last_message_at: new Date().toISOString() }).eq('id', state.activeConvo.id);
+}
+
 // ── INIT ──
 (async () => {
+  try { applyMode(localStorage.getItem('mauko_mode') || 'dark'); } catch(e) { applyMode('dark'); }
   const {data:{session}} = await sb.auth.getSession();
   if(session?.user) await loadProfile(session.user);
   sb.auth.onAuthStateChange((event,session) => {
