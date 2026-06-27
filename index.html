@@ -1771,9 +1771,9 @@ async function acceptCall() {
   } catch(e) { showToast('Cannot access mic/camera'); endCall(); }
 }
 
-function rejectCall() {
+async function rejectCall() {
   const ic=S.incomingCall;
-  if (ic) sb.from('call_signals').insert({conversation_id:ic.convId,sender_id:S.user.id,receiver_id:ic.callerId,type:'end',payload:'{}'});
+  if (ic) { try { await sb.from('call_signals').insert({conversation_id:ic.convId,sender_id:S.user.id,receiver_id:ic.callerId,type:'end',payload:'{}'}); } catch(_){} }
   hideIncomingCall();
 }
 
@@ -1814,13 +1814,13 @@ async function initPeerConnection(isInitiator, incomingOfferPayload, convId, rem
 
   S.peerConnection.onicecandidate=async e=>{
     if (e.candidate) {
-      await sb.from('call_signals').insert({
+      try { await sb.from('call_signals').insert({
         conversation_id:convId,
         sender_id:S.user.id,
         receiver_id:remoteUserId,
         type:'candidate',
         payload:JSON.stringify(e.candidate)
-      }).catch(()=>{});
+      }); } catch(_){}
     }
   };
 
@@ -1845,7 +1845,7 @@ async function initPeerConnection(isInitiator, incomingOfferPayload, convId, rem
           await drainICE(); // apply any buffered candidates immediately
         } else if (sig.type==='candidate') {
           if (remoteSet && S.peerConnection.remoteDescription) {
-            await S.peerConnection.addIceCandidate(new RTCIceCandidate(data)).catch(()=>{});
+            try { await S.peerConnection.addIceCandidate(new RTCIceCandidate(data)); } catch(_){}
           } else {
             iceBuf.push(data); // buffer until remote is set
           }
@@ -1884,7 +1884,7 @@ async function initPeerConnection(isInitiator, incomingOfferPayload, convId, rem
 
 async function endCall() {
   if (S.activeConvo) {
-    sb.from('call_signals').insert({conversation_id:S.activeConvo.id,sender_id:S.user.id,receiver_id:S.activeConvo.peerId,type:'end',payload:'{}'}).catch(()=>{});
+    try { await sb.from('call_signals').insert({conversation_id:S.activeConvo.id,sender_id:S.user.id,receiver_id:S.activeConvo.peerId,type:'end',payload:'{}'}); } catch(_){}
   }
   if (S.peerConnection) { try { S.peerConnection.close(); } catch(e){} S.peerConnection=null; }
   if (S.localStream) { S.localStream.getTracks().forEach(t=>t.stop()); S.localStream=null; }
