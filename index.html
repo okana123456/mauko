@@ -228,7 +228,7 @@
   .unread-badge { background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 2px 7px; min-width: 20px; text-align: center; }
 
   /* ── CONVERSATION VIEW ── */
-  #screen-convo { background: var(--bg); display: none; flex-direction: column; }
+  #screen-convo { background: var(--bg); position: fixed; inset: 0; display: none; flex-direction: column; z-index: 20; }
   #screen-convo.open { display: flex; }
   .convo-header { padding: 52px 12px 12px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
   .back-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: none; border: none; color: var(--text); cursor: pointer; }
@@ -1369,13 +1369,13 @@ function renderUserList(users, containerId, onClick) {
   el.innerHTML = users.map(u=>{
     const col = COLORS.includes(u.avatar_color) ? u.avatar_color : 'c-purple';
     return `
-    <div class="user-list-item" data-uid="${escapeAttr(u.id)}" data-uname="${escapeAttr(u.display_name || '')}" data-ucol="${escapeAttr(col)}" data-uhandle="${escapeAttr(u.username || '')}">
+    <div class="user-list-item" data-uid="${escapeAttr(u.id)}" data-uname="${escapeAttr(u.display_name || '')}" data-ucol="${escapeAttr(col)}" data-uhandle="${escapeAttr(u.username || '')}" style="cursor:pointer">
       <div class="avatar ${escapeAttr(col)}" style="color:#fff;width:44px;height:44px;font-size:17px;flex-shrink:0">${escapeHtml(initials(u.display_name))}</div>
       <div style="flex:1">
         <div style="font-size:15px;font-weight:600">${escapeHtml(u.display_name || 'User')}</div>
         <div style="font-size:13px;color:var(--text2)">@${escapeHtml(u.username || '')}</div>
       </div>
-      <div style="font-size:12px;color:var(--accent);font-weight:600">Tap to chat →</div>
+      <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
     </div>`;
   }).join('');
   el.querySelectorAll('.user-list-item').forEach(item => {
