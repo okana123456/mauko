@@ -1583,36 +1583,33 @@ state.incomingCall = null;
 state.callChannel = null;
 
 // ── Global incoming call listener — starts at login, always on ──
+// ONLY handles 'offer' and 'end' — never touches peerConnection directly
 function listenForIncomingCalls() {
   if(state.callChannel) { try { sb.removeChannel(state.callChannel); } catch(e){} }
   state.callChannel = sb.channel('incoming-calls-' + state.user.id)
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'call_signals'}, async (p) => {
       const sig = p.new;
-      // Ignore signals we sent ourselves
-      if(sig.sender_id === state.user.id) return;
-      // Only handle 'offer' or 'end' here — candidates/answers handled inside active call
+      if(!sig) return;
+      if(sig.sender_id === state.user.id) return;      // ignore own signals
+      if(sig.type !== 'offer' && sig.type !== 'end') return; // strictly only these two
+
       if(sig.type === 'offer') {
-        // Don't show if already in a call
-        if(document.getElementById('call-overlay').classList.contains('active')) return;
-        // Look up caller profile
-        const {data: callerProfile} = await sb.from('profiles').select('display_name,avatar_color').eq('id', sig.sender_id).single();
+        if(document.getElementById('call-overlay').classList.contains('active')) return; // already in call
+        const {data: callerProfile} = await sb.from('profiles')
+          .select('display_name,avatar_color').eq('id', sig.sender_id).maybeSingle();
         const callerName = callerProfile?.display_name || 'Someone';
         const callerColor = callerProfile?.avatar_color || 'c-purple';
-        // Parse call type from offer metadata
         let callType = 'audio';
         try { const parsed = JSON.parse(sig.payload); callType = parsed.callType || 'audio'; } catch(e){}
-        // Store for acceptCall()
         state.incomingCall = {
           convId: sig.conversation_id,
           callerId: sig.sender_id,
-          callerName,
-          callerColor,
-          callType,
+          callerName, callerColor, callType,
           offer: sig.payload
         };
         showIncomingCall(callerName, callerColor, callType);
+
       } else if(sig.type === 'end') {
-        // Caller hung up before answer
         hideIncomingCall();
         if(document.getElementById('call-overlay').classList.contains('active')) {
           endCall();
@@ -1698,6 +1695,16 @@ async function initPeerConnection(isInitiator, incomingOfferPayload, convId) {
   // Clean up any existing connection
   if(state.peerConnection) { try { state.peerConnection.close(); } catch(e){} state.peerConnection = null; }
 
+  // Buffer for ICE candidates that arrive before remoteDescription is set
+  const iceCandidateBuffer = [];
+  let remoteSet = false;
+
+  async function drainCandidates() {
+    while(iceCandidateBuffer.length && state.peerConnection) {
+      try { await state.peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidateBuffer.shift())); } catch(e){}
+    }
+  }
+
   state.peerConnection = new RTCPeerConnection({iceServers: ICE_SERVERS});
 
   // Add local tracks
@@ -1717,40 +1724,44 @@ async function initPeerConnection(isInitiator, incomingOfferPayload, convId) {
         sender_id: state.user.id,
         type: 'candidate',
         payload: JSON.stringify(e.candidate)
-      });
+      }).catch(()=>{});
     }
   };
 
-  // Connection state logging
+  // Connection state
   state.peerConnection.onconnectionstatechange = () => {
     const s = state.peerConnection?.connectionState;
     if(s === 'disconnected' || s === 'failed') { showToast('Call disconnected'); endCall(); }
   };
 
-  // Subscribe to signals for this conversation
+  // Subscribe to signals for THIS conversation only
   const callCh = sb.channel('call-signals-' + convId + '-' + Date.now())
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'call_signals', filter:`conversation_id=eq.${convId}`}, async (p) => {
       const sig = p.new;
       if(sig.sender_id === state.user.id) return; // ignore own signals
-      if(!state.peerConnection) return;
+      if(!state.peerConnection) return;           // connection already cleaned up
+      if(sig.type === 'offer') return;            // offers handled by global listener only
       try {
         const payload = JSON.parse(sig.payload);
         if(sig.type === 'answer' && isInitiator) {
           await state.peerConnection.setRemoteDescription(new RTCSessionDescription(payload));
+          remoteSet = true;
           document.getElementById('call-state').textContent = 'Connected ✓';
+          await drainCandidates();
         } else if(sig.type === 'candidate') {
-          if(state.peerConnection.remoteDescription) {
-            await state.peerConnection.addIceCandidate(new RTCIceCandidate(payload));
+          if(remoteSet && state.peerConnection.remoteDescription) {
+            await state.peerConnection.addIceCandidate(new RTCIceCandidate(payload)).catch(()=>{});
+          } else {
+            iceCandidateBuffer.push(payload); // buffer until remote is set
           }
         } else if(sig.type === 'end') {
           showToast('Call ended');
           endCall();
         }
-      } catch(e) { console.error('Signal error:', e); }
+      } catch(e) { console.error('Signal error:', sig.type, e); }
     })
     .subscribe();
 
-  // Store channel reference for cleanup
   state.activeCallChannel = callCh;
 
   if(isInitiator) {
