@@ -1362,38 +1362,31 @@ async function doSearch(q) {
 
 function renderUserList(users, containerId, onClick) {
   const el = document.getElementById(containerId);
-  if(!users.length) { el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">No users found</div>'; return; }
-  // Show a "Message" button on search panel results, plain tap on modal list
-  const isModal = containerId === 'modal-user-list' || containerId === 'group-user-list';
+  if(!users.length) {
+    el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">No users found</div>';
+    return;
+  }
   el.innerHTML = users.map(u=>{
     const col = COLORS.includes(u.avatar_color) ? u.avatar_color : 'c-purple';
     return `
-    <div class="user-list-item" data-uid="${escapeAttr(u.id)}" data-uname="${escapeAttr(u.display_name || '')}" data-ucol="${escapeAttr(col)}" data-uhandle="${escapeAttr(u.username || '')}" style="justify-content:space-between">
-      <div style="display:flex;align-items:center;gap:14px">
-        <div class="avatar ${escapeAttr(col)}" style="color:#fff;width:44px;height:44px;font-size:17px;flex-shrink:0">${escapeHtml(initials(u.display_name))}</div>
-        <div>
-          <div style="font-size:15px;font-weight:600">${escapeHtml(u.display_name || 'User')}</div>
-          <div style="font-size:13px;color:var(--text2)">@${escapeHtml(u.username || '')}</div>
-        </div>
+    <div class="user-list-item" data-uid="${escapeAttr(u.id)}" data-uname="${escapeAttr(u.display_name || '')}" data-ucol="${escapeAttr(col)}" data-uhandle="${escapeAttr(u.username || '')}">
+      <div class="avatar ${escapeAttr(col)}" style="color:#fff;width:44px;height:44px;font-size:17px;flex-shrink:0">${escapeHtml(initials(u.display_name))}</div>
+      <div style="flex:1">
+        <div style="font-size:15px;font-weight:600">${escapeHtml(u.display_name || 'User')}</div>
+        <div style="font-size:13px;color:var(--text2)">@${escapeHtml(u.username || '')}</div>
       </div>
-      ${!isModal ? `<button class="msg-start-btn" data-uid="${escapeAttr(u.id)}" style="background:var(--accent);color:#fff;border:none;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:var(--font)">Message</button>` : ''}
+      <div style="font-size:12px;color:var(--accent);font-weight:600">Tap to chat →</div>
     </div>`;
   }).join('');
   el.querySelectorAll('.user-list-item').forEach(item => {
-    const user = {
-      id: item.dataset.uid,
-      display_name: item.dataset.uname,
-      avatar_color: item.dataset.ucol,
-      username: item.dataset.uhandle,
-    };
-    if(isModal) {
-      // whole row tappable in modals
-      item.addEventListener('click', () => onClick(user));
-    } else {
-      // only the Message button triggers in search panel
-      const btn = item.querySelector('.msg-start-btn');
-      if(btn) btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(user); });
-    }
+    item.addEventListener('click', () => {
+      onClick({
+        id: item.dataset.uid,
+        display_name: item.dataset.uname,
+        avatar_color: item.dataset.ucol,
+        username: item.dataset.uhandle,
+      });
+    });
   });
 }
 
