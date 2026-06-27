@@ -1719,12 +1719,14 @@ async function initPeerConnection(isInitiator, incomingOfferPayload, convId) {
   // ICE candidates — send through Supabase
   state.peerConnection.onicecandidate = async (e) => {
     if(e.candidate) {
-      await sb.from('call_signals').insert({
-        conversation_id: convId,
-        sender_id: state.user.id,
-        type: 'candidate',
-        payload: JSON.stringify(e.candidate)
-      }).catch(()=>{});
+      try {
+        await sb.from('call_signals').insert({
+          conversation_id: convId,
+          sender_id: state.user.id,
+          type: 'candidate',
+          payload: JSON.stringify(e.candidate)
+        });
+      } catch(err) {}
     }
   };
 
@@ -1790,10 +1792,10 @@ async function initPeerConnection(isInitiator, incomingOfferPayload, convId) {
   }
 }
 
-function endCall() {
+async function endCall() {
   // Send end signal to other party
-  if(state.activeConvo && state.peerConnection) {
-    sb.from('call_signals').insert({conversation_id: state.activeConvo.id, sender_id: state.user.id, type:'end', payload:'{}'}).catch(()=>{});
+  if(state.activeConvo) {
+    try { await sb.from('call_signals').insert({conversation_id: state.activeConvo.id, sender_id: state.user.id, type:'end', payload:'{}'}); } catch(e){}
   }
   if(state.peerConnection) { try { state.peerConnection.close(); } catch(e){} state.peerConnection = null; }
   if(state.localStream) { state.localStream.getTracks().forEach(t=>t.stop()); state.localStream = null; }
