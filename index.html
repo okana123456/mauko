@@ -190,42 +190,52 @@
   .contact-time { font-size: 11px; color: var(--text3); }
   .unread-badge { background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 2px 7px; min-width: 20px; text-align: center; }
 
-  /* ── CONVERSATION VIEW — SLIDE-IN ── */
+  /* ── CONVERSATION VIEW ── */
   #screen-convo {
     position: fixed; inset: 0; display: flex; flex-direction: column; z-index: 20;
     background: var(--bg);
     transform: translateX(100%);
-    transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+    transition: transform 0.26s cubic-bezier(0.4,0,0.2,1);
     will-change: transform;
+    /* Critical: let the browser handle keyboard resize */
+    height: 100%; height: 100dvh;
   }
   #screen-convo.open { transform: translateX(0); }
 
-  .convo-header { padding: 52px 12px 12px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-  .back-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: none; border: none; color: var(--text); cursor: pointer; }
-  .back-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .convo-header {
+    padding: env(safe-area-inset-top, 44px) 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+    min-height: 60px;
+  }
+  .back-btn { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: none; border: none; color: var(--text); cursor: pointer; flex-shrink: 0; }
+  .back-btn svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
   .convo-info { flex: 1; min-width: 0; }
-  .convo-name { font-size: 17px; font-weight: 700; }
-  .convo-status { font-size: 12px; color: var(--green); }
-  .convo-actions { display: flex; gap: 8px; }
-  .call-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: none; color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .convo-name { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .convo-status { font-size: 12px; }
+  .convo-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .call-btn { width: 38px; height: 38px; border-radius: 50%; background: var(--bg3); border: none; color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .call-btn svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .call-btn.green { background: rgba(34,197,94,0.15); color: var(--green); }
 
-  /* ── MESSAGES — seamless scroll ── */
+  /* ── MESSAGES ── */
   .messages-wrap {
     flex: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    padding: 12px 16px 8px;
+    padding: 10px 10px 6px;
     display: flex;
     flex-direction: column;
-    gap: 2px; /* tighter gap = more natural */
+    gap: 1px;
     scroll-behavior: smooth;
+    min-height: 0; /* critical for flex shrink */
   }
-  .msg-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 2px; }
+  .msg-row { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 3px; }
   .msg-row.mine { flex-direction: row-reverse; }
-  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .msg-avatar { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
 
   /* ── BUBBLE ── */
   .msg-bubble {
@@ -283,42 +293,97 @@
   .video-card iframe { width: 100%; height: 180px; border: none; display: block; }
   .video-card-no-embed { width: 100%; height: 80px; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--text3); text-align: center; padding: 12px; }
 
-  /* Encode bar */
-  .encode-bar { background: rgba(124,106,244,0.07); border: 1px solid rgba(124,106,244,0.14); border-radius: 10px; padding: 6px 12px; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; cursor: pointer; }
-  .encode-toggle { width: 34px; height: 19px; background: var(--border); border-radius: 10px; position: relative; transition: background 0.2s; flex-shrink: 0; }
+  /* Encode bar — slim single line */
+  .encode-bar { background: rgba(124,106,244,0.06); border-radius: 8px; padding: 4px 10px; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; cursor: pointer; }
+  .encode-toggle { width: 30px; height: 17px; background: var(--border2); border-radius: 9px; position: relative; transition: background 0.2s; flex-shrink: 0; }
   .encode-toggle.on { background: var(--accent); }
-  .encode-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left 0.2s; }
-  .encode-toggle.on::after { left: 17px; }
-  .encode-label { font-size: 11.5px; color: var(--text2); flex: 1; }
-  .encode-hint { font-size: 13px; }
+  .encode-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: left 0.2s; }
+  .encode-toggle.on::after { left: 15px; }
+  .encode-label { font-size: 11px; color: var(--text3); flex: 1; }
+  .encode-hint { font-size: 12px; }
 
-  /* Message input */
-  .msg-input-wrap { background: var(--bg2); border-top: 1px solid var(--border); padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px)); flex-shrink: 0; }
-  .msg-input-row { display: flex; align-items: flex-end; gap: 6px; }
-  .msg-input { flex: 1; background: var(--bg3); border: 1.5px solid var(--border); border-radius: 22px; padding: 10px 14px; font-size: 15px; color: var(--text); font-family: var(--font); outline: none; resize: none; max-height: 120px; line-height: 1.45; min-height: 42px; transition: border-color 0.18s; }
-  .msg-input:focus { border-color: var(--accent); }
-  .msg-input::placeholder { color: var(--text3); }
-  .msg-send { width: 42px; height: 42px; border-radius: 50%; background: var(--accent); border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background 0.15s, transform 0.1s; }
-  .msg-send:active { background: var(--accent3); transform: scale(0.92); }
-  .msg-send svg { width: 17px; height: 17px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-  .voice-record-btn { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--bg3); color: var(--text2); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background 0.15s; }
-  .voice-record-btn.recording { background: var(--red); animation: pulse-rec 1s infinite; }
-  .voice-record-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  @keyframes pulse-rec { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
-  .attach-btn { width: 34px; height: 34px; background: none; border: none; color: var(--text3); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; }
-  .attach-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .emoji-strip { display: flex; gap: 2px; overflow-x: auto; padding: 3px 0; scrollbar-width: none; }
+  /* ── INPUT WRAP — fixed at bottom, never pushed ── */
+  .msg-input-wrap {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 5px 8px;
+    padding-bottom: calc(5px + env(safe-area-inset-bottom, 0px));
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  /* Emoji strip — scrollable, 30 emojis */
+  .emoji-strip { display: flex; gap: 0; overflow-x: auto; padding: 2px 0 5px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .emoji-strip::-webkit-scrollbar { display: none; }
-  .emoji-btn { font-size: 22px; cursor: pointer; padding: 3px 5px; border-radius: 8px; transition: background 0.1s; border: none; background: none; }
-  .emoji-btn:active { background: var(--bg3); }
+  .emoji-btn { font-size: 23px; cursor: pointer; padding: 1px 5px; border: none; background: none; flex-shrink: 0; line-height: 1; }
+  .emoji-btn:active { opacity: 0.6; }
 
-  /* Typing indicator */
-  .typing-indicator { display: none; align-items: center; gap: 5px; padding: 2px 0; min-height: 16px; }
+  /* Typing */
+  .typing-indicator { display: none; align-items: center; gap: 4px; height: 14px; margin-bottom: 2px; }
   .typing-indicator.show { display: flex; }
-  .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); animation: typingBounce 1.2s infinite; }
+  .typing-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text3); animation: typingBounce 1.2s infinite; }
   .typing-dot:nth-child(2) { animation-delay: 0.2s; }
   .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes typingBounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+  @keyframes typingBounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-4px)} }
+
+  /* Input row — all elements in one line, nothing overflows */
+  .msg-input-row { display: flex; align-items: flex-end; gap: 5px; width: 100%; }
+  .attach-btn { width: 36px; height: 36px; min-width: 36px; background: none; border: none; color: var(--text3); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; }
+  .attach-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .msg-input {
+    flex: 1;
+    min-width: 0; /* allow shrinking */
+    background: var(--bg3);
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 9px 12px;
+    font-size: 16px; /* 16px prevents iOS zoom on focus */
+    color: var(--text);
+    font-family: var(--font);
+    outline: none;
+    resize: none;
+    max-height: 96px;
+    line-height: 1.4;
+    min-height: 38px;
+    transition: border-color 0.18s;
+  }
+  .msg-input:focus { border-color: var(--accent); }
+  .msg-input::placeholder { color: var(--text3); }
+  .voice-record-btn {
+    width: 38px; height: 38px; min-width: 38px;
+    border-radius: 50%; border: none;
+    background: var(--bg3); color: var(--text2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0; touch-action: none;
+    transition: background 0.15s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .voice-record-btn.recording { background: var(--red); }
+  .voice-record-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .msg-send {
+    width: 38px; height: 38px; min-width: 38px;
+    border-radius: 50%; background: var(--accent);
+    border: none; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .msg-send:active { background: var(--accent3); transform: scale(0.9); }
+  .msg-send svg { width: 16px; height: 16px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Recording pill — shows duration while holding */
+  .rec-pill {
+    display: none; position: absolute; bottom: 64px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--red); color: #fff; border-radius: 20px;
+    padding: 8px 18px; font-size: 14px; font-weight: 600;
+    align-items: center; gap: 8px; white-space: nowrap;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4); z-index: 10;
+    pointer-events: none;
+  }
+  .rec-pill.show { display: flex; }
+  .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: recBlink 1s infinite; flex-shrink: 0; }
+  @keyframes recBlink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  @keyframes pulse-rec { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
 
   /* ── CALL OVERLAY ── */
   #call-overlay { position: fixed; inset: 0; background: #000; z-index: 100; display: none; flex-direction: column; align-items: center; justify-content: space-between; padding: 64px 32px 48px; }
@@ -717,26 +782,50 @@
   <div class="msg-input-wrap">
     <div class="encode-bar" onclick="toggleEncode()">
       <div class="encode-toggle on" id="encode-toggle"></div>
-      <span class="encode-label" id="encode-label">Encoded — tap a message to reveal</span>
+      <span class="encode-label" id="encode-label">Encoded — hold message to peek</span>
       <span class="encode-hint" id="encode-hint">🔒</span>
     </div>
     <div class="emoji-strip">
       <button class="emoji-btn" onclick="addEmoji('😂')">😂</button>
       <button class="emoji-btn" onclick="addEmoji('❤️')">❤️</button>
       <button class="emoji-btn" onclick="addEmoji('🔥')">🔥</button>
-      <button class="emoji-btn" onclick="addEmoji('👀')">👀</button>
       <button class="emoji-btn" onclick="addEmoji('😭')">😭</button>
       <button class="emoji-btn" onclick="addEmoji('🤣')">🤣</button>
-      <button class="emoji-btn" onclick="addEmoji('✅')">✅</button>
-      <button class="emoji-btn" onclick="addEmoji('💯')">💯</button>
-      <button class="emoji-btn" onclick="addEmoji('🎉')">🎉</button>
       <button class="emoji-btn" onclick="addEmoji('😍')">😍</button>
+      <button class="emoji-btn" onclick="addEmoji('👀')">👀</button>
+      <button class="emoji-btn" onclick="addEmoji('💯')">💯</button>
       <button class="emoji-btn" onclick="addEmoji('🙏')">🙏</button>
+      <button class="emoji-btn" onclick="addEmoji('😊')">😊</button>
+      <button class="emoji-btn" onclick="addEmoji('🥺')">🥺</button>
+      <button class="emoji-btn" onclick="addEmoji('😎')">😎</button>
+      <button class="emoji-btn" onclick="addEmoji('🎉')">🎉</button>
+      <button class="emoji-btn" onclick="addEmoji('✅')">✅</button>
       <button class="emoji-btn" onclick="addEmoji('💀')">💀</button>
+      <button class="emoji-btn" onclick="addEmoji('😅')">😅</button>
+      <button class="emoji-btn" onclick="addEmoji('🤩')">🤩</button>
+      <button class="emoji-btn" onclick="addEmoji('😤')">😤</button>
+      <button class="emoji-btn" onclick="addEmoji('🥳')">🥳</button>
+      <button class="emoji-btn" onclick="addEmoji('😴')">😴</button>
+      <button class="emoji-btn" onclick="addEmoji('🤔')">🤔</button>
+      <button class="emoji-btn" onclick="addEmoji('👍')">👍</button>
+      <button class="emoji-btn" onclick="addEmoji('👎')">👎</button>
+      <button class="emoji-btn" onclick="addEmoji('👏')">👏</button>
+      <button class="emoji-btn" onclick="addEmoji('💪')">💪</button>
+      <button class="emoji-btn" onclick="addEmoji('🤝')">🤝</button>
+      <button class="emoji-btn" onclick="addEmoji('😘')">😘</button>
+      <button class="emoji-btn" onclick="addEmoji('🫡')">🫡</button>
+      <button class="emoji-btn" onclick="addEmoji('💸')">💸</button>
+      <button class="emoji-btn" onclick="addEmoji('🎯')">🎯</button>
     </div>
     <div class="typing-indicator" id="typing-indicator">
       <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
-      <span style="font-size:12px;color:var(--text3);margin-left:4px" id="typing-name"></span>
+      <span style="font-size:11px;color:var(--text3);margin-left:4px" id="typing-name"></span>
+    </div>
+    <!-- Recording pill — shows while holding mic -->
+    <div class="rec-pill" id="rec-pill">
+      <div class="rec-dot"></div>
+      <span id="rec-timer">0:00</span>
+      <span style="opacity:0.7;font-size:12px">· release to send</span>
     </div>
     <div class="msg-input-row">
       <button class="attach-btn" onclick="showAttach()">
@@ -746,10 +835,10 @@
         onkeydown="msgKeydown(event)"
         oninput="autoResize(this); sendTyping()"></textarea>
       <button class="voice-record-btn" id="voice-btn"
-        onpointerdown="startVoiceRecord()"
-        onpointerup="stopVoiceRecord()"
-        onpointerleave="stopVoiceRecord()"
-        title="Hold to record voice note">
+        onpointerdown="startVoiceRecord(event)"
+        onpointerup="stopVoiceRecord(event)"
+        onpointercancel="cancelVoiceRecord()"
+        title="Hold to record">
         <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
       </button>
       <button class="msg-send" onclick="sendMessage()">
@@ -1277,7 +1366,10 @@ async function deleteConvo(convId) {
 }
 
 function closeConvo() {
-  document.getElementById('screen-convo').classList.remove('open');
+  const convo = document.getElementById('screen-convo');
+  convo.classList.remove('open');
+  convo.style.height = '';
+  convo.style.top = '';
   if (S.msgChannel) { try { sb.removeChannel(S.msgChannel); } catch(e){} S.msgChannel=null; }
   S.activeConvo = null;
   loadConversations(); loadGroups();
@@ -1380,52 +1472,118 @@ function attachBubbleHold(el) {
   el.addEventListener('touchend',     endPeek);
 }
 
-// ── VOICE NOTE RECORDING ──
-let _recorder = null, _recChunks = [], _recStart = 0;
+// ── VOICE NOTE — proper hold-to-record ──
+const MIN_HOLD_MS = 400;   // hold this long before recording starts
+const MIN_DUR_MS  = 1000;  // minimum recording length to actually send
 
-async function startVoiceRecord() {
+let _recState    = 'idle'; // idle | arming | recording | cancelled
+let _armTimer    = null;
+let _recorder    = null;
+let _recChunks   = [];
+let _recStart    = 0;
+let _recInterval = null;
+let _recMime     = 'audio/webm';
+
+function startVoiceRecord(e) {
   if (!S.activeConvo) return;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-    _recChunks = [];
-    _recorder  = new MediaRecorder(stream, {mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg'});
-    _recorder.ondataavailable = e => { if (e.data.size > 0) _recChunks.push(e.data); };
-    _recorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(_recChunks, {type: _recorder.mimeType});
-      const dur  = Math.round((Date.now() - _recStart) / 1000);
-      if (dur < 1) return; // too short
-      await uploadVoiceNote(blob, dur);
-    };
-    _recorder.start();
-    _recStart = Date.now();
-    document.getElementById('voice-btn').classList.add('recording');
-    showToast('Recording… release to send', 99999);
-  } catch(e) {
-    showToast('Microphone access denied');
+  if (e) e.preventDefault();
+  if (_recState !== 'idle') return;
+  _recState = 'arming';
+  _armTimer = setTimeout(async () => {
+    if (_recState !== 'arming') return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+      _recMime   = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+      _recChunks = [];
+      _recorder  = new MediaRecorder(stream, {mimeType: _recMime});
+      _recorder.ondataavailable = ev => { if (ev.data.size > 0) _recChunks.push(ev.data); };
+      _recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        hideRecPill();
+        const dur = Math.round((Date.now() - _recStart) / 1000);
+        if (_recState === 'cancelled' || dur < 1) { _recState = 'idle'; return; }
+        _recState = 'idle';
+        const blob = new Blob(_recChunks, {type: _recMime});
+        await uploadVoiceNote(blob, dur);
+      };
+      _recorder.start(100);
+      _recStart = Date.now();
+      _recState = 'recording';
+      document.getElementById('voice-btn').classList.add('recording');
+      showRecPill();
+    } catch(err) {
+      _recState = 'idle';
+      showToast('Microphone access denied');
+    }
+  }, MIN_HOLD_MS);
+}
+
+function stopVoiceRecord(e) {
+  if (e) e.preventDefault();
+  if (_recState === 'arming') {
+    clearTimeout(_armTimer);
+    _recState = 'idle';
+    return;
+  }
+  if (_recState === 'recording' && _recorder?.state === 'recording') {
+    const held = Date.now() - _recStart;
+    if (held < MIN_DUR_MS) {
+      _recState = 'cancelled';
+      _recorder.stop();
+      document.getElementById('voice-btn').classList.remove('recording');
+      showToast('Hold longer to record 🎤');
+      return;
+    }
+    _recorder.stop();
+    document.getElementById('voice-btn').classList.remove('recording');
   }
 }
 
-function stopVoiceRecord() {
-  if (_recorder && _recorder.state === 'recording') {
+function cancelVoiceRecord() {
+  clearTimeout(_armTimer);
+  if (_recState === 'recording' && _recorder?.state === 'recording') {
+    _recState = 'cancelled';
     _recorder.stop();
     document.getElementById('voice-btn').classList.remove('recording');
-    showToast('Sending voice note…', 2000);
+    hideRecPill();
+  } else {
+    _recState = 'idle';
   }
+}
+
+function showRecPill() {
+  const pill = document.getElementById('rec-pill');
+  if (pill) pill.classList.add('show');
+  let secs = 0;
+  _recInterval = setInterval(() => {
+    secs++;
+    const m = Math.floor(secs / 60);
+    const s = String(secs % 60).padStart(2, '0');
+    const el = document.getElementById('rec-timer');
+    if (el) el.textContent = `${m}:${s}`;
+  }, 1000);
+}
+
+function hideRecPill() {
+  const pill = document.getElementById('rec-pill');
+  if (pill) pill.classList.remove('show');
+  clearInterval(_recInterval);
+  _recInterval = null;
 }
 
 async function uploadVoiceNote(blob, durSecs) {
   if (!S.activeConvo || !S.user) return;
-  const ext  = blob.type.includes('webm') ? 'webm' : 'ogg';
+  showToast('Sending voice note…', 2000);
+  const ext  = _recMime.includes('webm') ? 'webm' : 'ogg';
   const path = `${S.user.id}/voice_${Date.now()}.${ext}`;
-  const {error: upErr} = await sb.storage.from('chat-images').upload(path, blob, {contentType: blob.type, upsert: false});
-  if (upErr) return showToast('Voice upload failed');
+  const {error: upErr} = await sb.storage.from('chat-images').upload(path, blob, {contentType: _recMime, upsert: false});
+  if (upErr) { showToast('Voice upload failed'); return; }
   const {data: pub} = sb.storage.from('chat-images').getPublicUrl(path);
   const payload = JSON.stringify({url: pub.publicUrl, dur: durSecs});
   const {data, error} = await sb.from('messages')
     .insert({conversation_id: S.activeConvo.id, sender_id: S.user.id, content: payload, type: 'voice'})
     .select('*,profiles(display_name,avatar_color,cipher_shift)').single();
-  if (error) return showToast('Send failed');
+  if (error) { showToast('Send failed'); return; }
   appendMessage(data); scrollBottom();
   await sb.from('conversations').update({last_message: '🎤 Voice note', last_message_at: new Date().toISOString()}).eq('id', S.activeConvo.id);
 }
@@ -1940,9 +2098,30 @@ function applyMode(mode) {
 }
 function toggleLightMode() { applyMode(document.body.getAttribute('data-mode')==='light'?'dark':'light'); }
 
-// ══════════════════════════════════════════════
-// BOOT
-// ══════════════════════════════════════════════
+// ── KEYBOARD / VIEWPORT FIX — keeps input always visible on mobile ──
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    const convo = document.getElementById('screen-convo');
+    if (convo.classList.contains('open')) {
+      // Pin the screen height to the visible viewport
+      convo.style.height = window.visualViewport.height + 'px';
+      // Scroll messages to bottom when keyboard opens
+      const wrap = document.getElementById('messages-wrap');
+      if (wrap) wrap.scrollTop = wrap.scrollHeight;
+    }
+  });
+  window.visualViewport.addEventListener('scroll', () => {
+    const convo = document.getElementById('screen-convo');
+    if (convo.classList.contains('open')) {
+      convo.style.top = window.visualViewport.offsetTop + 'px';
+    }
+  });
+}
+
+// Reset height when conversation closes
+const _origClose = closeConvo;
+// (closeConvo already defined above — patch it inline below)
+
 (async()=>{
   try { applyMode(localStorage.getItem('mauko_mode')||'dark'); } catch(e){ applyMode('dark'); }
   const {data:{session}}=await sb.auth.getSession();
