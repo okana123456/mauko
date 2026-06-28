@@ -225,55 +225,55 @@
     flex: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    padding: 10px 0 6px;
-    display: flex;
-    flex-direction: column;
-    align-items: center; /* center the inner column */
+    overscroll-behavior-y: contain;
+    padding: 8px 0 4px;
+    display: block; /* plain block scroll — no flex centering */
     scroll-behavior: smooth;
     min-height: 0;
   }
-  /* inner column — max-width like Claude */
+  /* inner — full width, no centering on mobile */
   .messages-inner {
     width: 100%;
-    max-width: 680px;
     padding: 0 10px;
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    flex: 1;
+    gap: 0;
+    min-height: 100%;
+    justify-content: flex-end; /* messages start from bottom */
   }
-  .msg-row { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 3px; }
+  .msg-row { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 4px; }
   .msg-row.mine { flex-direction: row-reverse; }
-  .msg-avatar { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
 
   /* ── BUBBLE ── */
   .msg-bubble {
-    max-width: 75%;
-    padding: 10px 14px;
-    border-radius: 20px;
-    font-size: 15.5px;
+    max-width: 78%;
+    padding: 9px 13px;
+    border-radius: 18px;
+    font-size: 15px;
     line-height: 1.5;
     word-break: break-word;
     position: relative;
-    transition: filter 0.15s ease;
+    transition: filter 0.12s ease;
     -webkit-user-select: none;
     user-select: none;
   }
-  .msg-bubble.theirs { background: var(--surface); border-bottom-left-radius: 5px; color: var(--text); }
-  .msg-bubble.mine   { background: var(--accent);  border-bottom-right-radius: 5px; color: #fff; }
+  .msg-bubble.theirs { background: var(--surface); border-bottom-left-radius: 4px; color: var(--text); }
+  .msg-bubble.mine   { background: var(--accent);  border-bottom-right-radius: 4px; color: #fff; }
 
-  /* ENCODED — blurred, hold to peek */
+  /* ENCODED — blurred */
   .msg-bubble.encoded {
-    filter: blur(5px);
+    filter: blur(4.5px);
     cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
   }
-  /* While finger is held down */
+  /* While holding — instantly clear */
   .msg-bubble.peeking {
-    filter: none;
+    filter: none !important;
     cursor: pointer;
   }
-  /* PLAIN (encode toggle OFF) */
+  /* PLAIN (encode OFF) */
   .msg-bubble.plain {
     filter: none;
     cursor: default;
@@ -281,7 +281,7 @@
     user-select: text;
   }
 
-  .msg-meta { font-size: 10px; margin-top: 4px; padding: 0 4px; color: var(--text3); }
+  .msg-meta { font-size: 10.5px; margin-top: 3px; padding: 0 4px; color: var(--text3); }
   .msg-row.mine .msg-meta { text-align: right; color: rgba(255,255,255,0.45); }
   .msg-date-divider { text-align: center; font-size: 11px; color: var(--text3); padding: 10px 0 4px; }
   .msg-system { text-align: center; font-size: 11.5px; color: var(--text3); background: var(--bg3); border-radius: 10px; padding: 5px 14px; align-self: center; margin-bottom: 8px; }
@@ -319,7 +319,7 @@
   /* Inner container — max-width so it never goes edge to edge */
   .input-inner {
     width: 100%;
-    max-width: 680px; /* comfortable on tablets & landscape phones */
+    max-width: 600px; /* comfortable width for input, not messages */
   }
 
   /* Encode bar */
@@ -809,7 +809,9 @@
   </div>
 
   <div class="messages-wrap" id="messages-wrap">
-    <div class="msg-system">Messages are private & encoded</div>
+    <div class="messages-inner" id="messages-inner">
+      <div class="msg-system">Messages are private &amp; encoded</div>
+    </div>
   </div>
 
   <div class="msg-input-wrap">
@@ -1494,25 +1496,40 @@ function appendMessage(m) {
 // ── HOLD-TO-PEEK decode (pointerdown = show, pointerup = hide) ──
 function attachBubbleHold(el) {
   let peekTimer = null;
-  el.addEventListener('pointerdown', () => {
-    // Small delay so accidental taps don't flash
+  let isPeeking = false;
+
+  function startPeek(e) {
+    e.stopPropagation();
+    isPeeking = false;
+    clearTimeout(peekTimer);
     peekTimer = setTimeout(() => {
       const raw   = el.dataset.raw;
       const shift = parseInt(el.dataset.shift) || S.cipherShift;
       el.textContent = cipherDecode(raw, shift);
       el.classList.add('peeking');
-    }, 80);
-  });
-  const endPeek = () => {
+      isPeeking = true;
+      if (navigator.vibrate) navigator.vibrate(25);
+    }, 300);
+  }
+
+  function endPeek() {
     clearTimeout(peekTimer);
-    if (el.classList.contains('peeking')) {
+    if (isPeeking) {
+      isPeeking = false;
       el.classList.remove('peeking');
-      el.textContent = el.dataset.raw; // show cipher text again
+      // small delay so user can read before re-blur
+      setTimeout(() => { if (!isPeeking) el.textContent = el.dataset.raw; }, 100);
     }
-  };
-  el.addEventListener('pointerup',    endPeek);
-  el.addEventListener('pointerleave', endPeek);
-  el.addEventListener('touchend',     endPeek);
+  }
+
+  // Touch events — primary on Android/iOS
+  el.addEventListener('touchstart',  startPeek, {passive: false});
+  el.addEventListener('touchend',    endPeek,   {passive: true});
+  el.addEventListener('touchcancel', endPeek,   {passive: true});
+  // Pointer fallback for desktop
+  el.addEventListener('mousedown', startPeek);
+  el.addEventListener('mouseup',   endPeek);
+  el.addEventListener('mouseleave',endPeek);
 }
 
 // ── VOICE NOTE — proper hold-to-record ──
